@@ -12,6 +12,11 @@ PORT_RANGE_START=3000
 PORT_RANGE_END=4000
 DRY_RUN=false
 
+# Main domain for subdomains (REQUIRED - set this to your domain)
+# All created sites will be subdomains of this domain
+# Example: If MAIN_DOMAIN="example.com", creating "blog" will create "blog.example.com"
+MAIN_DOMAIN="${NGINX_SITE_DOMAIN:-}"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -246,7 +251,7 @@ display_creation_summary() {
 # ============================================================================
 
 cmd_create_static() {
-    local domain=""
+    local subdomain=""
     local repo_url=""
 
     # Parse arguments
@@ -261,8 +266,8 @@ cmd_create_static() {
                 shift
                 ;;
             *)
-                if [[ -z "$domain" ]]; then
-                    domain="$1"
+                if [[ -z "$subdomain" ]]; then
+                    subdomain="$1"
                     shift
                 else
                     print_error "Unknown argument: $1"
@@ -273,16 +278,25 @@ cmd_create_static() {
     done
 
     # Validate required arguments
-    if [[ -z "$domain" ]] || [[ -z "$repo_url" ]]; then
-        print_error "Usage: nginx-site create static <domain> --repo <git-url>"
+    if [[ -z "$subdomain" ]] || [[ -z "$repo_url" ]]; then
+        print_error "Usage: nginx-site create static <subdomain> --repo <git-url> [--dry-run]"
         exit 1
     fi
+
+    # Check main domain is configured
+    if [[ -z "$MAIN_DOMAIN" ]]; then
+        print_error "MAIN_DOMAIN not configured. Set it in the script or via NGINX_SITE_DOMAIN environment variable."
+        exit 1
+    fi
+
+    # Construct full domain
+    local domain="${subdomain}.${MAIN_DOMAIN}"
 
     # Extract project name
     local project
     project=$(extract_project_name "$repo_url")
 
-    print_info "Creating static site for domain: ${domain}"
+    print_info "Creating static site: ${domain}"
     print_info "Project name: ${project}"
 
     # Check if project already exists
@@ -295,7 +309,8 @@ cmd_create_static() {
     echo ""
     echo "Summary:"
     echo "  Type: Static site"
-    echo "  Domain: ${domain}"
+    echo "  Subdomain: ${subdomain}"
+    echo "  Full domain: ${domain}"
     echo "  Project: ${project}"
     echo "  Repository: ${repo_url}"
     echo ""
@@ -356,7 +371,7 @@ cmd_create_static() {
 # ============================================================================
 
 cmd_create_app() {
-    local domain=""
+    local subdomain=""
     local repo_url=""
     local port=""
     local start_command=""
@@ -381,8 +396,8 @@ cmd_create_app() {
                 shift
                 ;;
             *)
-                if [[ -z "$domain" ]]; then
-                    domain="$1"
+                if [[ -z "$subdomain" ]]; then
+                    subdomain="$1"
                     shift
                 else
                     print_error "Unknown argument: $1"
@@ -393,10 +408,19 @@ cmd_create_app() {
     done
 
     # Validate required arguments
-    if [[ -z "$domain" ]] || [[ -z "$repo_url" ]] || [[ -z "$start_command" ]]; then
-        print_error "Usage: nginx-site create app <domain> --repo <git-url> --start \"<command>\" [--port <port>]"
+    if [[ -z "$subdomain" ]] || [[ -z "$repo_url" ]] || [[ -z "$start_command" ]]; then
+        print_error "Usage: nginx-site create app <subdomain> --repo <git-url> --start \"<command>\" [--port <port>] [--dry-run]"
         exit 1
     fi
+
+    # Check main domain is configured
+    if [[ -z "$MAIN_DOMAIN" ]]; then
+        print_error "MAIN_DOMAIN not configured. Set it in the script or via NGINX_SITE_DOMAIN environment variable."
+        exit 1
+    fi
+
+    # Construct full domain
+    local domain="${subdomain}.${MAIN_DOMAIN}"
 
     # Auto-detect port if not provided
     if [[ -z "$port" ]]; then
@@ -413,7 +437,7 @@ cmd_create_app() {
     local project
     project=$(extract_project_name "$repo_url")
 
-    print_info "Creating application site for domain: ${domain}"
+    print_info "Creating application site: ${domain}"
     print_info "Project name: ${project}"
 
     # Check if project already exists
@@ -426,7 +450,8 @@ cmd_create_app() {
     echo ""
     echo "Summary:"
     echo "  Type: Application site"
-    echo "  Domain: ${domain}"
+    echo "  Subdomain: ${subdomain}"
+    echo "  Full domain: ${domain}"
     echo "  Project: ${project}"
     echo "  Repository: ${repo_url}"
     echo "  Port: ${port}"
@@ -914,9 +939,13 @@ main() {
     if [[ $# -eq 0 ]]; then
         echo "nginx-site - Manage nginx-based websites"
         echo ""
+        if [[ -n "$MAIN_DOMAIN" ]]; then
+            echo "Main domain: ${MAIN_DOMAIN}"
+            echo ""
+        fi
         echo "Usage:"
-        echo "  nginx-site create static <domain> --repo <git-url> [--dry-run]"
-        echo "  nginx-site create app <domain> --repo <git-url> --start \"<command>\" [--port <port>] [--dry-run]"
+        echo "  nginx-site create static <subdomain> --repo <git-url> [--dry-run]"
+        echo "  nginx-site create app <subdomain> --repo <git-url> --start \"<command>\" [--port <port>] [--dry-run]"
         echo "  nginx-site start <project> [--dry-run]"
         echo "  nginx-site stop <project> [--dry-run]"
         echo "  nginx-site restart <project> [--dry-run]"
@@ -927,6 +956,10 @@ main() {
         echo ""
         echo "Options:"
         echo "  --dry-run    Show what would be done without executing"
+        echo ""
+        if [[ -z "$MAIN_DOMAIN" ]]; then
+            echo "NOTE: Set MAIN_DOMAIN in the script or via NGINX_SITE_DOMAIN environment variable"
+        fi
         exit 0
     fi
 

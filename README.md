@@ -32,10 +32,35 @@ sudo apt install nginx git certbot python3-certbot-nginx
    ```bash
    chmod +x nginx-site
    ```
-3. Move it to a directory in your PATH (optional):
+3. **Configure your main domain** (REQUIRED):
+
+   **Option A:** Set via environment variable
+   ```bash
+   export NGINX_SITE_DOMAIN=yourdomain.com
+   ```
+
+   **Option B:** Edit the script directly (line 18)
+   ```bash
+   # Change this line in nginx-site:
+   MAIN_DOMAIN="${NGINX_SITE_DOMAIN:-yourdomain.com}"
+   ```
+
+4. Move it to a directory in your PATH (optional):
    ```bash
    sudo mv nginx-site /usr/local/bin/
    ```
+
+### About Subdomains
+
+**All sites created with nginx-site are subdomains of your main domain.** For example:
+- If your main domain is `example.com`
+- Creating a site called `blog` will create `blog.example.com`
+- Creating a site called `api` will create `api.example.com`
+
+This approach:
+- Keeps your infrastructure organized under one domain
+- Makes SSL certificate management simpler
+- Follows best practices for multi-site hosting
 
 ## Architecture
 
@@ -63,7 +88,8 @@ All commands that modify the system support a `--dry-run` flag to preview change
 
 ```bash
 # Preview what would happen when creating a site
-sudo nginx-site create static example.com --repo https://github.com/user/site.git --dry-run
+# (creates blog.yourdomain.com if MAIN_DOMAIN=yourdomain.com)
+sudo nginx-site create static blog --repo https://github.com/user/site.git --dry-run
 
 # Preview service start
 sudo nginx-site start myproject --dry-run
@@ -87,14 +113,16 @@ This is useful for:
 ### Create a Static Site
 
 ```bash
-nginx-site create static example.com --repo https://github.com/user/static-site.git
+# Creates blog.yourdomain.com (where yourdomain.com is your MAIN_DOMAIN)
+nginx-site create static blog --repo https://github.com/user/static-site.git
 ```
 
 This creates:
 - System user based on repository name
+- Subdomain: `blog.yourdomain.com`
 - Directory structure at `/home/{project}/`
 - Nginx configuration serving static files
-- SSL certificate via certbot
+- SSL certificate via certbot for the subdomain
 
 **After creation:**
 1. Ensure your static files are in `/home/{project}/site`
@@ -103,7 +131,8 @@ This creates:
 ### Create an Application Site
 
 ```bash
-nginx-site create app api.example.com \
+# Creates api.yourdomain.com (where yourdomain.com is your MAIN_DOMAIN)
+nginx-site create app api \
   --repo https://github.com/user/node-app.git \
   --start "npm start" \
   --port 3000
@@ -151,8 +180,8 @@ nginx-site remove {project}
 ### Static HTML Site
 
 ```bash
-# Create a simple static site
-sudo nginx-site create static blog.example.com \
+# Create a simple static site at blog.yourdomain.com
+sudo nginx-site create static blog \
   --repo https://github.com/user/my-blog.git
 
 # Start the site
@@ -162,8 +191,8 @@ sudo nginx-site start my-blog
 ### Node.js Application
 
 ```bash
-# Create a Node.js API
-sudo nginx-site create app api.example.com \
+# Create a Node.js API at api.yourdomain.com
+sudo nginx-site create app api \
   --repo https://github.com/user/express-api.git \
   --start "node index.js"
 
@@ -181,8 +210,8 @@ sudo nginx-site start express-api
 ### Python Flask Application
 
 ```bash
-# Create a Flask app
-sudo nginx-site create app app.example.com \
+# Create a Flask app at app.yourdomain.com
+sudo nginx-site create app app \
   --repo https://github.com/user/flask-app.git \
   --start "/home/flask-app/site/venv/bin/python app.py" \
   --port 5000
