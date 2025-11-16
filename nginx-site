@@ -10,12 +10,14 @@ SITES_ENABLED_DIR="/etc/nginx/sites-enabled"
 SYSTEMD_DIR="/etc/systemd/system"
 PORT_RANGE_START=3000
 PORT_RANGE_END=4000
+DRY_RUN=false
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # ============================================================================
@@ -37,6 +39,19 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+print_dry_run() {
+    echo -e "${CYAN}[DRY-RUN]${NC} $1"
+}
+
+# Execute command or echo it in dry-run mode
+run_cmd() {
+    if [[ "$DRY_RUN" == "true" ]]; then
+        print_dry_run "$*"
+    else
+        "$@"
+    fi
 }
 
 # Extract project name from git repository URL
@@ -171,9 +186,9 @@ create_directory_structure() {
 
     print_info "Creating directory structure at ${home_dir}"
 
-    mkdir -p "${home_dir}"/{config,site,logs}
-    chown -R "${project}:${project}" "${home_dir}"
-    chmod 755 "${home_dir}"
+    run_cmd mkdir -p "${home_dir}"/{config,site,logs}
+    run_cmd chown -R "${project}:${project}" "${home_dir}"
+    run_cmd chmod 755 "${home_dir}"
 }
 
 # Clone git repository
@@ -185,11 +200,11 @@ clone_repository() {
     print_info "Cloning repository: ${repo_url}"
 
     # Remove site directory if it exists and is empty
-    if [[ -d "$site_dir" ]]; then
+    if [[ -d "$site_dir" ]] && [[ "$DRY_RUN" == "false" ]]; then
         rmdir "$site_dir" 2>/dev/null || true
     fi
 
-    sudo -u "$project" git clone "$repo_url" "$site_dir"
+    run_cmd sudo -u "$project" git clone "$repo_url" "$site_dir"
 }
 
 # Display summary after creation
@@ -241,6 +256,10 @@ cmd_create_static() {
                 repo_url="$2"
                 shift 2
                 ;;
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
             *)
                 if [[ -z "$domain" ]]; then
                     domain="$1"
@@ -280,16 +299,19 @@ cmd_create_static() {
     echo "  Project: ${project}"
     echo "  Repository: ${repo_url}"
     echo ""
-    read -p "Continue? [y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Cancelled"
-        exit 0
+
+    if [[ "$DRY_RUN" == "false" ]]; then
+        read -p "Continue? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Cancelled"
+            exit 0
+        fi
     fi
 
     # Create system user
     print_info "Creating system user: ${project}"
-    useradd -r -m -d "/home/${project}" -s /bin/bash "$project"
+    run_cmd useradd -r -m -d "/home/${project}" -s /bin/bash "$project"
 
     # Create directory structure
     create_directory_structure "$project"
@@ -300,18 +322,30 @@ cmd_create_static() {
     # Generate nginx configuration
     print_info "Generating nginx configuration"
     local nginx_config="/home/${project}/config/nginx.conf"
-    generate_static_nginx_config "$domain" "$project" > "$nginx_config"
-    chown "${project}:${project}" "$nginx_config"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        print_dry_run "Would write to ${nginx_config}:"
+        echo "---"
+        generate_static_nginx_config "$domain" "$project"
+        echo "---"
+    else
+        generate_static_nginx_config "$domain" "$project" > "$nginx_config"
+        chown "${project}:${project}" "$nginx_config"
+    fi
 
     # Symlink nginx config
     print_info "Symlinking nginx configuration"
-    ln -sf "$nginx_config" "${SITES_ENABLED_DIR}/${project}"
+    run_cmd ln -sf "$nginx_config" "${SITES_ENABLED_DIR}/${project}"
 
     # Setup SSL with certbot
     print_info "Setting up SSL certificate with certbot"
-    certbot --nginx -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email || {
-        print_warning "Certbot failed or requires manual intervention"
-    }
+    if [[ "$DRY_RUN" == "true" ]]; then
+        print_dry_run "certbot --nginx -d $domain --non-interactive --agree-tos --register-unsafely-without-email"
+    else
+        certbot --nginx -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email || {
+            print_warning "Certbot failed or requires manual intervention"
+        }
+    fi
 
     # Display summary
     display_creation_summary "$project" "static" "$domain"
@@ -341,6 +375,10 @@ cmd_create_app() {
             --start)
                 start_command="$2"
                 shift 2
+                ;;
+            --dry-run)
+                DRY_RUN=true
+                shift
                 ;;
             *)
                 if [[ -z "$domain" ]]; then
@@ -394,16 +432,19 @@ cmd_create_app() {
     echo "  Port: ${port}"
     echo "  Start command: ${start_command}"
     echo ""
-    read -p "Continue? [y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Cancelled"
-        exit 0
+
+    if [[ "$DRY_RUN" == "false" ]]; then
+        read -p "Continue? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Cancelled"
+            exit 0
+        fi
     fi
 
     # Create system user
     print_info "Creating system user: ${project}"
-    useradd -r -m -d "/home/${project}" -s /bin/bash "$project"
+    run_cmd useradd -r -m -d "/home/${project}" -s /bin/bash "$project"
 
     # Create directory structure
     create_directory_structure "$project"
@@ -414,37 +455,69 @@ cmd_create_app() {
     # Create .env file
     print_info "Creating .env file"
     local env_file="/home/${project}/config/.env"
-    cat > "$env_file" <<EOF
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        print_dry_run "Would write to ${env_file}:"
+        echo "---"
+        cat <<EOF
 # Environment variables for ${project}
 # Add your configuration here
 PORT=${port}
 EOF
-    chown "${project}:${project}" "$env_file"
-    chmod 600 "$env_file"
+        echo "---"
+    else
+        cat > "$env_file" <<EOF
+# Environment variables for ${project}
+# Add your configuration here
+PORT=${port}
+EOF
+        chown "${project}:${project}" "$env_file"
+        chmod 600 "$env_file"
+    fi
 
     # Generate nginx configuration
     print_info "Generating nginx configuration"
     local nginx_config="/home/${project}/config/nginx.conf"
-    generate_app_nginx_config "$domain" "$project" "$port" > "$nginx_config"
-    chown "${project}:${project}" "$nginx_config"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        print_dry_run "Would write to ${nginx_config}:"
+        echo "---"
+        generate_app_nginx_config "$domain" "$project" "$port"
+        echo "---"
+    else
+        generate_app_nginx_config "$domain" "$project" "$port" > "$nginx_config"
+        chown "${project}:${project}" "$nginx_config"
+    fi
 
     # Symlink nginx config
     print_info "Symlinking nginx configuration"
-    ln -sf "$nginx_config" "${SITES_ENABLED_DIR}/${project}"
+    run_cmd ln -sf "$nginx_config" "${SITES_ENABLED_DIR}/${project}"
 
     # Generate systemd service
     print_info "Generating systemd service"
     local service_file="${SYSTEMD_DIR}/${project}.service"
-    generate_systemd_service "$project" "$start_command" > "$service_file"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        print_dry_run "Would write to ${service_file}:"
+        echo "---"
+        generate_systemd_service "$project" "$start_command"
+        echo "---"
+    else
+        generate_systemd_service "$project" "$start_command" > "$service_file"
+    fi
 
     # Reload systemd
-    systemctl daemon-reload
+    run_cmd systemctl daemon-reload
 
     # Setup SSL with certbot
     print_info "Setting up SSL certificate with certbot"
-    certbot --nginx -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email || {
-        print_warning "Certbot failed or requires manual intervention"
-    }
+    if [[ "$DRY_RUN" == "true" ]]; then
+        print_dry_run "certbot --nginx -d $domain --non-interactive --agree-tos --register-unsafely-without-email"
+    else
+        certbot --nginx -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email || {
+            print_warning "Certbot failed or requires manual intervention"
+        }
+    fi
 
     # Display summary
     display_creation_summary "$project" "app" "$domain"
@@ -455,10 +528,29 @@ EOF
 # ============================================================================
 
 cmd_start() {
-    local project="$1"
+    local project=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            *)
+                if [[ -z "$project" ]]; then
+                    project="$1"
+                    shift
+                else
+                    print_error "Unknown argument: $1"
+                    exit 1
+                fi
+                ;;
+        esac
+    done
 
     if [[ -z "$project" ]]; then
-        print_error "Usage: nginx-site start <project>"
+        print_error "Usage: nginx-site start <project> [--dry-run]"
         exit 1
     fi
 
@@ -473,16 +565,16 @@ cmd_start() {
     # Start application service if it's an app
     if [[ "$project_type" == "app" ]]; then
         print_info "Enabling and starting ${project} service"
-        systemctl enable "${project}.service"
-        systemctl start "${project}.service"
+        run_cmd systemctl enable "${project}.service"
+        run_cmd systemctl start "${project}.service"
     fi
 
     # Test and reload nginx
     print_info "Testing nginx configuration"
-    nginx -t
+    run_cmd nginx -t
 
     print_info "Reloading nginx"
-    systemctl reload nginx
+    run_cmd systemctl reload nginx
 
     print_success "Project '${project}' started successfully"
 }
@@ -492,10 +584,29 @@ cmd_start() {
 # ============================================================================
 
 cmd_stop() {
-    local project="$1"
+    local project=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            *)
+                if [[ -z "$project" ]]; then
+                    project="$1"
+                    shift
+                else
+                    print_error "Unknown argument: $1"
+                    exit 1
+                fi
+                ;;
+        esac
+    done
 
     if [[ -z "$project" ]]; then
-        print_error "Usage: nginx-site stop <project>"
+        print_error "Usage: nginx-site stop <project> [--dry-run]"
         exit 1
     fi
 
@@ -510,7 +621,7 @@ cmd_stop() {
     # Stop application service if it's an app
     if [[ "$project_type" == "app" ]]; then
         print_info "Stopping ${project} service"
-        systemctl stop "${project}.service"
+        run_cmd systemctl stop "${project}.service"
         print_success "Project '${project}' stopped successfully"
     else
         print_warning "Project '${project}' is a static site (no service to stop)"
@@ -522,10 +633,29 @@ cmd_stop() {
 # ============================================================================
 
 cmd_restart() {
-    local project="$1"
+    local project=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            *)
+                if [[ -z "$project" ]]; then
+                    project="$1"
+                    shift
+                else
+                    print_error "Unknown argument: $1"
+                    exit 1
+                fi
+                ;;
+        esac
+    done
 
     if [[ -z "$project" ]]; then
-        print_error "Usage: nginx-site restart <project>"
+        print_error "Usage: nginx-site restart <project> [--dry-run]"
         exit 1
     fi
 
@@ -540,7 +670,7 @@ cmd_restart() {
     # Restart application service if it's an app
     if [[ "$project_type" == "app" ]]; then
         print_info "Restarting ${project} service"
-        systemctl restart "${project}.service"
+        run_cmd systemctl restart "${project}.service"
         print_success "Project '${project}' restarted successfully"
     else
         print_warning "Project '${project}' is a static site (no service to restart)"
@@ -631,10 +761,29 @@ cmd_list() {
 # ============================================================================
 
 cmd_remove() {
-    local project="$1"
+    local project=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            *)
+                if [[ -z "$project" ]]; then
+                    project="$1"
+                    shift
+                else
+                    print_error "Unknown argument: $1"
+                    exit 1
+                fi
+                ;;
+        esac
+    done
 
     if [[ -z "$project" ]]; then
-        print_error "Usage: nginx-site remove <project>"
+        print_error "Usage: nginx-site remove <project> [--dry-run]"
         exit 1
     fi
 
@@ -658,38 +807,50 @@ cmd_remove() {
     fi
 
     echo ""
-    read -p "Are you sure? [y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Cancelled"
-        exit 0
+
+    if [[ "$DRY_RUN" == "false" ]]; then
+        read -p "Are you sure? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Cancelled"
+            exit 0
+        fi
     fi
 
     # Stop and disable service if it's an app
     if [[ "$project_type" == "app" ]]; then
         print_info "Stopping and disabling ${project} service"
-        systemctl stop "${project}.service" 2>/dev/null || true
-        systemctl disable "${project}.service" 2>/dev/null || true
+        if [[ "$DRY_RUN" == "true" ]]; then
+            print_dry_run "systemctl stop ${project}.service"
+            print_dry_run "systemctl disable ${project}.service"
+        else
+            systemctl stop "${project}.service" 2>/dev/null || true
+            systemctl disable "${project}.service" 2>/dev/null || true
+        fi
 
         print_info "Removing systemd service file"
-        rm -f "${SYSTEMD_DIR}/${project}.service"
-        systemctl daemon-reload
+        run_cmd rm -f "${SYSTEMD_DIR}/${project}.service"
+        run_cmd systemctl daemon-reload
     fi
 
     # Remove nginx configuration symlink
     print_info "Removing nginx configuration"
-    rm -f "${SITES_ENABLED_DIR}/${project}"
+    run_cmd rm -f "${SITES_ENABLED_DIR}/${project}"
 
     # Reload nginx
-    nginx -t && systemctl reload nginx
+    if [[ "$DRY_RUN" == "true" ]]; then
+        print_dry_run "nginx -t && systemctl reload nginx"
+    else
+        nginx -t && systemctl reload nginx
+    fi
 
     # Remove home directory
     print_info "Removing home directory"
-    rm -rf "/home/${project}"
+    run_cmd rm -rf "/home/${project}"
 
     # Remove system user
     print_info "Removing system user"
-    userdel "$project" 2>/dev/null || true
+    run_cmd userdel "$project"
 
     print_success "Project '${project}' removed successfully"
 }
@@ -754,15 +915,18 @@ main() {
         echo "nginx-site - Manage nginx-based websites"
         echo ""
         echo "Usage:"
-        echo "  nginx-site create static <domain> --repo <git-url>"
-        echo "  nginx-site create app <domain> --repo <git-url> --start \"<command>\" [--port <port>]"
-        echo "  nginx-site start <project>"
-        echo "  nginx-site stop <project>"
-        echo "  nginx-site restart <project>"
+        echo "  nginx-site create static <domain> --repo <git-url> [--dry-run]"
+        echo "  nginx-site create app <domain> --repo <git-url> --start \"<command>\" [--port <port>] [--dry-run]"
+        echo "  nginx-site start <project> [--dry-run]"
+        echo "  nginx-site stop <project> [--dry-run]"
+        echo "  nginx-site restart <project> [--dry-run]"
         echo "  nginx-site status <project>"
         echo "  nginx-site list"
-        echo "  nginx-site remove <project>"
+        echo "  nginx-site remove <project> [--dry-run]"
         echo "  nginx-site config <project>"
+        echo ""
+        echo "Options:"
+        echo "  --dry-run    Show what would be done without executing"
         exit 0
     fi
 

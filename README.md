@@ -57,6 +57,33 @@ Each project follows this structure:
 
 ## Usage
 
+### Dry Run Mode
+
+All commands that modify the system support a `--dry-run` flag to preview changes without executing them:
+
+```bash
+# Preview what would happen when creating a site
+sudo nginx-site create static example.com --repo https://github.com/user/site.git --dry-run
+
+# Preview service start
+sudo nginx-site start myproject --dry-run
+
+# Preview removal
+sudo nginx-site remove myproject --dry-run
+```
+
+In dry-run mode:
+- Commands are echoed with `[DRY-RUN]` prefix instead of being executed
+- File contents (nginx configs, systemd services, .env files) are displayed
+- No actual changes are made to the system
+- Interactive confirmations are skipped
+
+This is useful for:
+- Verifying what will be created before committing
+- Understanding what files and commands are involved
+- Testing configurations
+- Documentation and learning
+
 ### Create a Static Site
 
 ```bash
