@@ -8,14 +8,26 @@ set -euo pipefail
 # Configuration
 SITES_ENABLED_DIR="/etc/nginx/sites-enabled"
 SYSTEMD_DIR="/etc/systemd/system"
+CONFIG_FILE="/etc/nginx-site.conf"
 PORT_RANGE_START=3000
 PORT_RANGE_END=4000
 DRY_RUN=false
 
-# Main domain for subdomains (REQUIRED - set this to your domain)
+# Main domain for subdomains - loaded from config file or environment variable
 # All created sites will be subdomains of this domain
 # Example: If MAIN_DOMAIN="example.com", creating "blog" will create "blog.example.com"
-MAIN_DOMAIN="${NGINX_SITE_DOMAIN:-}"
+MAIN_DOMAIN=""
+
+# Load configuration from file if it exists
+if [[ -f "$CONFIG_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+fi
+
+# Environment variable overrides config file (useful for testing)
+if [[ -n "${NGINX_SITE_DOMAIN:-}" ]]; then
+    MAIN_DOMAIN="$NGINX_SITE_DOMAIN"
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -285,7 +297,7 @@ cmd_create_static() {
 
     # Check main domain is configured
     if [[ -z "$MAIN_DOMAIN" ]]; then
-        print_error "MAIN_DOMAIN not configured. Set it in the script or via NGINX_SITE_DOMAIN environment variable."
+        print_error "Main domain not configured. Run: nginx-site setup <domain>"
         exit 1
     fi
 
@@ -415,7 +427,7 @@ cmd_create_app() {
 
     # Check main domain is configured
     if [[ -z "$MAIN_DOMAIN" ]]; then
-        print_error "MAIN_DOMAIN not configured. Set it in the script or via NGINX_SITE_DOMAIN environment variable."
+        print_error "Main domain not configured. Run: nginx-site setup <domain>"
         exit 1
     fi
 
@@ -925,6 +937,89 @@ cmd_config() {
 }
 
 # ============================================================================
+# Command: setup
+# ============================================================================
+
+cmd_setup() {
+    local domain=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            *)
+                if [[ -z "$domain" ]]; then
+                    domain="$1"
+                    shift
+                else
+                    print_error "Unknown argument: $1"
+                    exit 1
+                fi
+                ;;
+        esac
+    done
+
+    if [[ -z "$domain" ]]; then
+        print_error "Usage: nginx-site setup <domain> [--dry-run]"
+        echo ""
+        echo "Example: nginx-site setup example.com"
+        echo ""
+        echo "This will configure 'example.com' as your main domain."
+        echo "All sites will be created as subdomains: blog.example.com, api.example.com, etc."
+        exit 1
+    fi
+
+    # Validate domain format (basic check)
+    if [[ ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+        print_error "Invalid domain format: $domain"
+        exit 1
+    fi
+
+    # Show what will be configured
+    echo ""
+    echo "Configuration:"
+    echo "  Main domain: ${domain}"
+    echo "  Config file: ${CONFIG_FILE}"
+    echo ""
+    echo "All sites will be created as subdomains of ${domain}"
+    echo ""
+
+    if [[ "$DRY_RUN" == "false" ]]; then
+        read -p "Continue? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Cancelled"
+            exit 0
+        fi
+    fi
+
+    # Write configuration file
+    print_info "Writing configuration to ${CONFIG_FILE}"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        print_dry_run "Would write to ${CONFIG_FILE}:"
+        echo "---"
+        echo "# nginx-site configuration"
+        echo "# Main domain for all subdomains"
+        echo "MAIN_DOMAIN=${domain}"
+        echo "---"
+    else
+        cat > "$CONFIG_FILE" <<EOF
+# nginx-site configuration
+# Main domain for all subdomains
+MAIN_DOMAIN=${domain}
+EOF
+        chmod 644 "$CONFIG_FILE"
+        print_success "Configuration saved successfully!"
+        echo ""
+        echo "You can now create sites with: nginx-site create static <subdomain> --repo <url>"
+    fi
+}
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -944,6 +1039,10 @@ main() {
             echo ""
         fi
         echo "Usage:"
+        if [[ -z "$MAIN_DOMAIN" ]]; then
+            echo "  nginx-site setup <domain>          Configure main domain"
+            echo ""
+        fi
         echo "  nginx-site create static <subdomain> --repo <git-url> [--dry-run]"
         echo "  nginx-site create app <subdomain> --repo <git-url> --start \"<command>\" [--port <port>] [--dry-run]"
         echo "  nginx-site start <project> [--dry-run]"
@@ -958,7 +1057,7 @@ main() {
         echo "  --dry-run    Show what would be done without executing"
         echo ""
         if [[ -z "$MAIN_DOMAIN" ]]; then
-            echo "NOTE: Set MAIN_DOMAIN in the script or via NGINX_SITE_DOMAIN environment variable"
+            echo "NOTE: Run 'nginx-site setup <domain>' first to configure your main domain"
         fi
         exit 0
     fi
@@ -967,6 +1066,9 @@ main() {
     shift
 
     case "$command" in
+        setup)
+            cmd_setup "$@"
+            ;;
         create)
             if [[ $# -eq 0 ]]; then
                 print_error "Usage: nginx-site create {static|app} ..."

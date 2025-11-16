@@ -12,3 +12,7 @@ Thumbs.db
 # Backup files
 *.bak
 *.backup
+
+# Local config (for development/testing)
+.nginx-site.conf
+nginx-site.conf

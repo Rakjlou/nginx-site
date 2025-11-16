@@ -27,28 +27,24 @@ sudo apt install nginx git certbot python3-certbot-nginx
 
 ## Installation
 
-1. Clone or download the `nginx-site` script
-2. Make it executable:
+1. Clone or download the `nginx-site` script:
+   ```bash
+   git clone https://github.com/yourusername/nginx-site.git
+   cd nginx-site
+   ```
+
+2. Make it executable and move to your PATH:
    ```bash
    chmod +x nginx-site
-   ```
-3. **Configure your main domain** (REQUIRED):
-
-   **Option A:** Set via environment variable
-   ```bash
-   export NGINX_SITE_DOMAIN=yourdomain.com
-   ```
-
-   **Option B:** Edit the script directly (line 18)
-   ```bash
-   # Change this line in nginx-site:
-   MAIN_DOMAIN="${NGINX_SITE_DOMAIN:-yourdomain.com}"
-   ```
-
-4. Move it to a directory in your PATH (optional):
-   ```bash
    sudo mv nginx-site /usr/local/bin/
    ```
+
+3. **Configure your main domain** (REQUIRED):
+   ```bash
+   sudo nginx-site setup yourdomain.com
+   ```
+
+   This creates `/etc/nginx-site.conf` with your domain configuration. All sites will be created as subdomains of this domain.
 
 ### About Subdomains
 
@@ -61,6 +57,13 @@ This approach:
 - Keeps your infrastructure organized under one domain
 - Makes SSL certificate management simpler
 - Follows best practices for multi-site hosting
+
+**To reconfigure your domain:**
+```bash
+sudo nginx-site setup newdomain.com
+```
+
+**Configuration file location:** `/etc/nginx-site.conf`
 
 ## Architecture
 
