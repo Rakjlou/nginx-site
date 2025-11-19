@@ -263,7 +263,6 @@ display_creation_summary() {
 # ============================================================================
 
 cmd_create_static() {
-    local subdomain=""
     local repo_url=""
 
     # Parse arguments
@@ -278,20 +277,15 @@ cmd_create_static() {
                 shift
                 ;;
             *)
-                if [[ -z "$subdomain" ]]; then
-                    subdomain="$1"
-                    shift
-                else
-                    print_error "Unknown argument: $1"
-                    exit 1
-                fi
+                print_error "Unknown argument: $1"
+                exit 1
                 ;;
         esac
     done
 
     # Validate required arguments
-    if [[ -z "$subdomain" ]] || [[ -z "$repo_url" ]]; then
-        print_error "Usage: nginx-site create static <subdomain> --repo <git-url> [--dry-run]"
+    if [[ -z "$repo_url" ]]; then
+        print_error "Usage: nginx-site create static --repo <git-url> [--dry-run]"
         exit 1
     fi
 
@@ -301,12 +295,12 @@ cmd_create_static() {
         exit 1
     fi
 
-    # Construct full domain
-    local domain="${subdomain}.${MAIN_DOMAIN}"
-
-    # Extract project name
+    # Extract project name from repository (this becomes the subdomain)
     local project
     project=$(extract_project_name "$repo_url")
+
+    # Construct full domain using project name as subdomain
+    local domain="${project}.${MAIN_DOMAIN}"
 
     print_info "Creating static site: ${domain}"
     print_info "Project name: ${project}"
@@ -321,8 +315,7 @@ cmd_create_static() {
     echo ""
     echo "Summary:"
     echo "  Type: Static site"
-    echo "  Subdomain: ${subdomain}"
-    echo "  Full domain: ${domain}"
+    echo "  Domain: ${domain}"
     echo "  Project: ${project}"
     echo "  Repository: ${repo_url}"
     echo ""
@@ -383,7 +376,6 @@ cmd_create_static() {
 # ============================================================================
 
 cmd_create_app() {
-    local subdomain=""
     local repo_url=""
     local port=""
     local start_command=""
@@ -408,20 +400,15 @@ cmd_create_app() {
                 shift
                 ;;
             *)
-                if [[ -z "$subdomain" ]]; then
-                    subdomain="$1"
-                    shift
-                else
-                    print_error "Unknown argument: $1"
-                    exit 1
-                fi
+                print_error "Unknown argument: $1"
+                exit 1
                 ;;
         esac
     done
 
     # Validate required arguments
-    if [[ -z "$subdomain" ]] || [[ -z "$repo_url" ]] || [[ -z "$start_command" ]]; then
-        print_error "Usage: nginx-site create app <subdomain> --repo <git-url> --start \"<command>\" [--port <port>] [--dry-run]"
+    if [[ -z "$repo_url" ]] || [[ -z "$start_command" ]]; then
+        print_error "Usage: nginx-site create app --repo <git-url> --start \"<command>\" [--port <port>] [--dry-run]"
         exit 1
     fi
 
@@ -431,8 +418,12 @@ cmd_create_app() {
         exit 1
     fi
 
-    # Construct full domain
-    local domain="${subdomain}.${MAIN_DOMAIN}"
+    # Extract project name from repository (this becomes the subdomain)
+    local project
+    project=$(extract_project_name "$repo_url")
+
+    # Construct full domain using project name as subdomain
+    local domain="${project}.${MAIN_DOMAIN}"
 
     # Auto-detect port if not provided
     if [[ -z "$port" ]]; then
@@ -444,10 +435,6 @@ cmd_create_app() {
         fi
         print_info "Using port: ${port}"
     fi
-
-    # Extract project name
-    local project
-    project=$(extract_project_name "$repo_url")
 
     print_info "Creating application site: ${domain}"
     print_info "Project name: ${project}"
@@ -462,8 +449,7 @@ cmd_create_app() {
     echo ""
     echo "Summary:"
     echo "  Type: Application site"
-    echo "  Subdomain: ${subdomain}"
-    echo "  Full domain: ${domain}"
+    echo "  Domain: ${domain}"
     echo "  Project: ${project}"
     echo "  Repository: ${repo_url}"
     echo "  Port: ${port}"
@@ -1015,7 +1001,11 @@ EOF
         chmod 644 "$CONFIG_FILE"
         print_success "Configuration saved successfully!"
         echo ""
-        echo "You can now create sites with: nginx-site create static <subdomain> --repo <url>"
+        echo "You can now create sites with:"
+        echo "  nginx-site create static --repo <url>"
+        echo "  nginx-site create app --repo <url> --start \"<command>\""
+        echo ""
+        echo "The subdomain will be automatically derived from your repository name."
     fi
 }
 
@@ -1043,8 +1033,8 @@ main() {
             echo "  nginx-site setup <domain>          Configure main domain"
             echo ""
         fi
-        echo "  nginx-site create static <subdomain> --repo <git-url> [--dry-run]"
-        echo "  nginx-site create app <subdomain> --repo <git-url> --start \"<command>\" [--port <port>] [--dry-run]"
+        echo "  nginx-site create static --repo <git-url> [--dry-run]"
+        echo "  nginx-site create app --repo <git-url> --start \"<command>\" [--port <port>] [--dry-run]"
         echo "  nginx-site start <project> [--dry-run]"
         echo "  nginx-site stop <project> [--dry-run]"
         echo "  nginx-site restart <project> [--dry-run]"
@@ -1055,6 +1045,11 @@ main() {
         echo ""
         echo "Options:"
         echo "  --dry-run    Show what would be done without executing"
+        echo ""
+        if [[ -n "$MAIN_DOMAIN" ]]; then
+            echo "Note: Subdomain is automatically derived from repository name"
+            echo "      Example: repo 'blog' creates ${MAIN_DOMAIN} subdomain 'blog.${MAIN_DOMAIN}'"
+        fi
         echo ""
         if [[ -z "$MAIN_DOMAIN" ]]; then
             echo "NOTE: Run 'nginx-site setup <domain>' first to configure your main domain"

@@ -48,15 +48,18 @@ sudo apt install nginx git certbot python3-certbot-nginx
 
 ### About Subdomains
 
-**All sites created with nginx-site are subdomains of your main domain.** For example:
-- If your main domain is `example.com`
-- Creating a site called `blog` will create `blog.example.com`
-- Creating a site called `api` will create `api.example.com`
+**All sites are automatically created as subdomains of your main domain.**
+
+The subdomain is derived from your Git repository name:
+- Repository: `github.com/user/myblog` → Creates `myblog.example.com`
+- Repository: `github.com/user/api` → Creates `api.example.com`
+- Repository: `github.com/user/my-awesome-app` → Creates `my-awesome-app.example.com`
 
 This approach:
-- Keeps your infrastructure organized under one domain
-- Makes SSL certificate management simpler
-- Follows best practices for multi-site hosting
+- **Automatic**: No need to specify subdomains manually
+- **Consistent**: Repository name = subdomain name = project name
+- **Organized**: All sites under one domain
+- **Simple SSL**: Automatic certificate management per subdomain
 
 **To reconfigure your domain:**
 ```bash
@@ -91,8 +94,8 @@ All commands that modify the system support a `--dry-run` flag to preview change
 
 ```bash
 # Preview what would happen when creating a site
-# (creates blog.yourdomain.com if MAIN_DOMAIN=yourdomain.com)
-sudo nginx-site create static blog --repo https://github.com/user/site.git --dry-run
+# Subdomain is derived from repo name: blog.yourdomain.com
+sudo nginx-site create static --repo https://github.com/user/blog.git --dry-run
 
 # Preview service start
 sudo nginx-site start myproject --dry-run
@@ -116,27 +119,27 @@ This is useful for:
 ### Create a Static Site
 
 ```bash
-# Creates blog.yourdomain.com (where yourdomain.com is your MAIN_DOMAIN)
-nginx-site create static blog --repo https://github.com/user/static-site.git
+# Creates myblog.yourdomain.com (subdomain derived from repo name 'myblog')
+nginx-site create static --repo https://github.com/user/myblog.git
 ```
 
 This creates:
-- System user based on repository name
-- Subdomain: `blog.yourdomain.com`
-- Directory structure at `/home/{project}/`
+- System user based on repository name (`myblog`)
+- Subdomain automatically: `myblog.yourdomain.com`
+- Directory structure at `/home/myblog/`
 - Nginx configuration serving static files
 - SSL certificate via certbot for the subdomain
 
 **After creation:**
-1. Ensure your static files are in `/home/{project}/site`
-2. Run `nginx-site start {project}`
+1. Ensure your static files are in `/home/myblog/site`
+2. Run `nginx-site start myblog`
 
 ### Create an Application Site
 
 ```bash
-# Creates api.yourdomain.com (where yourdomain.com is your MAIN_DOMAIN)
-nginx-site create app api \
-  --repo https://github.com/user/node-app.git \
+# Creates myapi.yourdomain.com (subdomain derived from repo name 'myapi')
+nginx-site create app \
+  --repo https://github.com/user/myapi.git \
   --start "npm start" \
   --port 3000
 ```
@@ -183,49 +186,49 @@ nginx-site remove {project}
 ### Static HTML Site
 
 ```bash
-# Create a simple static site at blog.yourdomain.com
-sudo nginx-site create static blog \
-  --repo https://github.com/user/my-blog.git
+# Create a simple static site at myblog.yourdomain.com
+# (subdomain automatically derived from repo name 'myblog')
+sudo nginx-site create static --repo https://github.com/user/myblog.git
 
 # Start the site
-sudo nginx-site start my-blog
+sudo nginx-site start myblog
 ```
 
 ### Node.js Application
 
 ```bash
-# Create a Node.js API at api.yourdomain.com
-sudo nginx-site create app api \
-  --repo https://github.com/user/express-api.git \
-  --start "node index.js"
+# Create a Node.js API at myapi.yourdomain.com
+# (subdomain automatically derived from repo name 'myapi')
+sudo nginx-site create app --repo https://github.com/user/myapi.git --start "node index.js"
 
 # Install dependencies
-cd /home/express-api/site
-sudo -u express-api npm install
+cd /home/myapi/site
+sudo -u myapi npm install
 
 # Configure environment
-sudo nano /home/express-api/config/.env
+sudo nano /home/myapi/config/.env
 
 # Start the service
-sudo nginx-site start express-api
+sudo nginx-site start myapi
 ```
 
 ### Python Flask Application
 
 ```bash
-# Create a Flask app at app.yourdomain.com
-sudo nginx-site create app app \
-  --repo https://github.com/user/flask-app.git \
-  --start "/home/flask-app/site/venv/bin/python app.py" \
+# Create a Flask app at myflaskapp.yourdomain.com
+# (subdomain automatically derived from repo name 'myflaskapp')
+sudo nginx-site create app \
+  --repo https://github.com/user/myflaskapp.git \
+  --start "/home/myflaskapp/site/venv/bin/python app.py" \
   --port 5000
 
 # Setup Python environment (as the project user)
-cd /home/flask-app/site
-sudo -u flask-app python3 -m venv venv
-sudo -u flask-app venv/bin/pip install -r requirements.txt
+cd /home/myflaskapp/site
+sudo -u myflaskapp python3 -m venv venv
+sudo -u myflaskapp venv/bin/pip install -r requirements.txt
 
 # Start the service
-sudo nginx-site start flask-app
+sudo nginx-site start myflaskapp
 ```
 
 ## Configuration Files
@@ -287,7 +290,8 @@ API_KEY=your-secret-key
 
 1. **Initial Setup:**
    ```bash
-   sudo nginx-site create app example.com --repo {url} --start "{command}"
+   sudo nginx-site create app --repo {url} --start "{command}"
+   # Subdomain is automatically derived from repository name
    ```
 
 2. **Install Dependencies:**
